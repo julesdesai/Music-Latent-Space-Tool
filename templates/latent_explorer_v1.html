@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latent Audio Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .point-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+        .point {
+            aspect-ratio: 1;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .point.selected {
+            border-color: #3b82f6;
+            transform: scale(1.05);
+        }
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8 text-center">Latent Audio Explorer</h1>
+        
+        <!-- Main interaction area -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="point-grid mb-8">
+                {% for i in range(n_points) %}
+                <div class="point bg-gray-200 rounded-lg border-2 border-transparent hover:border-blue-500 flex items-center justify-center"
+                     data-point="{{ i }}"
+                     onclick="selectPoint({{ i }})">
+                    <span class="text-lg font-bold">{{ i + 1 }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Current selection info -->
+            <div class="mb-6">
+                <div class="text-sm font-medium mb-2">Selected Points:</div>
+                <div class="flex gap-4 mb-4">
+                    <div id="point1Display" class="bg-gray-200 rounded px-4 py-2">None</div>
+                    <div class="flex items-center">→</div>
+                    <div id="point2Display" class="bg-gray-200 rounded px-4 py-2">None</div>
+                </div>
+            </div>
+
+            <!-- Loop controls -->
+            <div class="mb-4 flex items-center gap-4">
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="loopEnabled" class="form-checkbox h-5 w-5 text-blue-600" checked>
+                    <span class="ml-2">Loop Audio</span>
+                </label>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm">Loop Length:</span>
+                    <select id="loopLength" class="form-select rounded border px-2 py-1">
+                        <option value="1">1s</option>
+                        <option value="2">2s</option>
+                        <option value="4" selected>4s</option>
+                        <option value="8">8s</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Interpolation slider -->
+            <div class="space-y-2 mb-6">
+                <label class="block text-sm font-medium">
+                    Interpolation: <span id="interpolationValue">0%</span>
+                </label>
+                <input type="range" id="interpolationSlider" 
+                       min="0" max="100" value="0"
+                       class="w-full" disabled>
+            </div>
+
+            <!-- Audio player -->
+            <div>
+                <audio id="audioPlayer" controls class="w-full">
+                    <source src="" type="audio/wav">
+                </audio>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="bg-blue-50 rounded-lg p-4">
+            <h2 class="font-bold mb-2">How to use:</h2>
+            <ol class="list-decimal list-inside space-y-1">
+                <li>Click any two points in the grid to select them</li>
+                <li>Use the slider to interpolate between the selected points</li>
+                <li>Enable/disable looping with the checkbox</li>
+                <li>Adjust loop length as needed</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let selectedPoints = [];
+        const audioPlayer = document.getElementById('audioPlayer');
+        const interpolationSlider = document.getElementById('interpolationSlider');
+        const interpolationValue = document.getElementById('interpolationValue');
+        const loopEnabled = document.getElementById('loopEnabled');
+        const loopLength = document.getElementById('loopLength');
+        
+        // Audio loop handling
+        let loopTimeout;
+        
+        function handleLoop() {
+            if (loopEnabled.checked) {
+                const duration = parseFloat(loopLength.value);
+                const currentTime = audioPlayer.currentTime;
+                
+                if (currentTime >= duration) {
+                    audioPlayer.currentTime = 0;
+                }
+            }
+        }
+        
+        audioPlayer.addEventListener('timeupdate', handleLoop);
+        
+        loopEnabled.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                audioPlayer.loop = true;
+                const duration = parseFloat(loopLength.value);
+                if (audioPlayer.currentTime >= duration) {
+                    audioPlayer.currentTime = 0;
+                }
+            } else {
+                audioPlayer.loop = false;
+            }
+        });
+        
+        loopLength.addEventListener('change', (e) => {
+            if (loopEnabled.checked && audioPlayer.currentTime >= parseFloat(e.target.value)) {
+                audioPlayer.currentTime = 0;
+            }
+        });
+        
+        async function selectPoint(pointIndex) {
+            const point = document.querySelector(`[data-point="${pointIndex}"]`);
+            
+            if (selectedPoints.includes(pointIndex)) {
+                selectedPoints = selectedPoints.filter(p => p !== pointIndex);
+                point.classList.remove('selected');
+            } else if (selectedPoints.length < 2) {
+                selectedPoints.push(pointIndex);
+                point.classList.add('selected');
+                
+                try {
+                    const response = await fetch(`/audio/point_${pointIndex}.wav`);
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    
+                    if (selectedPoints.length === 1) {
+                        audioPlayer.src = url;
+                        if (loopEnabled.checked) {
+                            audioPlayer.loop = true;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading audio:', error);
+                }
+            }
+            
+            document.getElementById('point1Display').textContent = 
+                selectedPoints[0] !== undefined ? `Point ${selectedPoints[0] + 1}` : 'None';
+            document.getElementById('point2Display').textContent = 
+                selectedPoints[1] !== undefined ? `Point ${selectedPoints[1] + 1}` : 'None';
+                
+            interpolationSlider.disabled = selectedPoints.length !== 2;
+            if (selectedPoints.length === 2) {
+                updateInterpolation(0);
+            }
+        }
+        
+        async function updateInterpolation(value) {
+            if (selectedPoints.length !== 2) return;
+            
+            interpolationValue.textContent = `${value}%`;
+            
+            try {
+                const response = await fetch('/interpolate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        point1: selectedPoints[0],
+                        point2: selectedPoints[1],
+                        ratio: value / 100
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                const wasPlaying = !audioPlayer.paused;
+                const currentTime = audioPlayer.currentTime;
+                audioPlayer.src = data.audio_url;
+                
+                if (loopEnabled.checked) {
+                    audioPlayer.loop = true;
+                }
+                
+                if (wasPlaying) {
+                    audioPlayer.currentTime = currentTime;
+                    audioPlayer.play();
+                }
+            } catch (error) {
+                console.error('Interpolation error:', error);
+            }
+        }
+        
+        interpolationSlider.addEventListener('input', (e) => {
+            updateInterpolation(e.target.value);
+        });
+
+        // Initialize with loop enabled
+        audioPlayer.loop = true;
+    </script>
+</body>
+</html>

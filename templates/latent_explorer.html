@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latent Audio Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .latent-map {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1;
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .point {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .point:hover {
+            transform: translate(-50%, -50%) scale(1.5);
+        }
+        .current-position {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.5);
+            border: 2px solid #3b82f6;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .audio-controls {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8 text-center">Latent Audio Explorer</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- UMAP View -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">UMAP Visualization</h2>
+                <div id="umap-map" class="latent-map"></div>
+            </div>
+            
+            <!-- t-SNE View -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">t-SNE Visualization</h2>
+                <div id="tsne-map" class="latent-map"></div>
+            </div>
+        </div>
+        
+        <!-- Audio Controls -->
+        
+        <div class="audio-controls">
+            <div class="bg-white p-4 rounded-lg shadow-lg">
+                <div class="flex items-center gap-4 mb-2">
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" id="loopEnabled" 
+                            class="form-checkbox h-4 w-4 text-blue-600" checked>
+                        <span class="ml-2 text-sm">Loop</span>
+                    </label>
+                    <select id="loopLength" 
+                            class="form-select text-sm rounded border px-2 py-1">
+                        <option value="1">1s</option>
+                        <option value="2">2s</option>
+                        <option value="4" selected>4s</option>
+                        <option value="8">8s</option>
+                    </select>
+                </div>
+                <audio id="audioPlayer" controls loop 
+                    class="w-full max-w-xl"
+                    controlsList="nodownload">
+                    <source src="" type="audio/wav">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const audioPlayer = document.getElementById('audioPlayer');
+        let currentMethod = 'umap';
+        let latentMap;
+        
+        async function loadMap() {
+            const response = await fetch('/map');
+            latentMap = await response.json();
+            
+            // Initialize both visualizations
+            initializeMap('umap-map', latentMap.umap, 'umap');
+            initializeMap('tsne-map', latentMap.tsne, 'tsne');
+        }
+        
+        function initializeMap(containerId, points, method) {
+            const container = document.getElementById(containerId);
+            const rect = container.getBoundingClientRect();
+            
+            // Clear existing content
+            container.innerHTML = '';
+            
+            // Add points
+            Object.entries(points).forEach(([pointId, pos]) => {
+                const point = document.createElement('div');
+                point.className = 'point';
+                point.style.left = `${pos.x * 100}%`;
+                point.style.top = `${pos.y * 100}%`;
+                point.style.background = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                container.appendChild(point);
+            });
+            
+            // Add current position indicator
+            const currentPos = document.createElement('div');
+            currentPos.className = 'current-position';
+            currentPos.style.display = 'none';
+            container.appendChild(currentPos);
+            
+            // Add click handler
+            container.addEventListener('click', async (e) => {
+                const rect = container.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width;
+                const y = (e.clientY - rect.top) / rect.height;
+                
+                // Update position indicator
+                currentPos.style.left = `${x * 100}%`;
+                currentPos.style.top = `${y * 100}%`;
+                currentPos.style.display = 'block';
+                
+                // Generate audio at position
+                try {
+                    const response = await fetch('/generate_at_position', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            x: x,
+                            y: y,
+                            method: method
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    const wasPlaying = !audioPlayer.paused;
+                    audioPlayer.src = data.audio_url;
+                    if (wasPlaying) {
+                        audioPlayer.play();
+                    }
+                    
+                } catch (error) {
+                    console.error('Generation error:', error);
+                }
+            });
+        }
+        
+        // Load the map when page loads
+        loadMap();
+    </script>
+</body>
+</html>

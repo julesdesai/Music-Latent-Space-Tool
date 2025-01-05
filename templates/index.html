@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Generator - {{ model_choice.title() }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-3xl font-bold mb-6 text-center">
+            Audio Generator ({{ model_choice.title() }})
+        </h1>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Starting Point</label>
+                <input type="text" id="startPrompt" 
+                       class="w-full p-2 border rounded"
+                       value="deep house loop with punchy kicks and atmospheric pads">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Ending Point</label>
+                <input type="text" id="endPrompt" 
+                       class="w-full p-2 border rounded"
+                       value="tribal drum pattern with ethnic percussion and nature sounds">
+            </div>
+
+            <button id="generateBtn" 
+                    class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">
+                Generate Audio
+            </button>
+
+            <div id="audioControls" class="hidden space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">
+                        Interpolation: <span id="interpolationValue">0%</span>
+                    </label>
+                    <input type="range" id="interpolationSlider" 
+                           min="0" max="100" value="0"
+                           class="w-full">
+                </div>
+
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <audio id="currentAudio" controls class="w-full">
+                            <source src="" type="audio/wav">
+                        </audio>
+                        <p class="text-center text-sm mt-1">Current Audio</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                        <audio id="startAudio" controls class="w-full">
+                            <source src="" type="audio/wav">
+                        </audio>
+                        <p class="text-center text-sm mt-1">Start Audio</p>
+                    </div>
+                    <div>
+                        <audio id="endAudio" controls class="w-full">
+                            <source src="" type="audio/wav">
+                        </audio>
+                        <p class="text-center text-sm mt-1">End Audio</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loadingIndicator" class="hidden">
+                <div class="flex items-center justify-center space-x-2">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                    <span>Generating audio...</span>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="hidden text-red-500 text-center"></div>
+        </div>
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generateBtn');
+        const startPrompt = document.getElementById('startPrompt');
+        const endPrompt = document.getElementById('endPrompt');
+        const audioControls = document.getElementById('audioControls');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorMessage = document.getElementById('errorMessage');
+        const startAudio = document.getElementById('startAudio');
+        const endAudio = document.getElementById('endAudio');
+        const currentAudio = document.getElementById('currentAudio');
+        const interpolationSlider = document.getElementById('interpolationSlider');
+        const interpolationValue = document.getElementById('interpolationValue');
+
+        generateBtn.addEventListener('click', async () => {
+            loadingIndicator.classList.remove('hidden');
+            audioControls.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            generateBtn.disabled = true;
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        start_prompt: startPrompt.value,
+                        end_prompt: endPrompt.value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                startAudio.src = data.start_audio + '?t=' + new Date().getTime();
+                endAudio.src = data.end_audio + '?t=' + new Date().getTime();
+                currentAudio.src = data.start_audio + '?t=' + new Date().getTime();
+                audioControls.classList.remove('hidden');
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                generateBtn.disabled = false;
+            }
+        });
+
+        interpolationSlider.addEventListener('input', async (e) => {
+            const value = e.target.value;
+            interpolationValue.textContent = `${value}%`;
+            
+            try {
+                const response = await fetch('/interpolate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ratio: value / 100
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                currentAudio.src = data.interpolated_audio + '?t=' + new Date().getTime();
+                currentAudio.play();
+            } catch (error) {
+                console.error('Interpolation error:', error);
+            }
+        });
+    </script>
+</body>
+</html>
